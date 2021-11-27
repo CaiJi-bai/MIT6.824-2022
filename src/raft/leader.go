@@ -85,7 +85,7 @@ func (rf *Raft) advanceCommitIndexForLeader() {
 			l := rf.commitIndex - rf.firstLogEntry().Index + 1
 			r := newCommitIndex - rf.firstLogEntry().Index + 1
 			rf.commitIndex = newCommitIndex
-			fmt.Println("advance commit: ", rf.commitIndex)
+			fmt.Println("leader advance commit: ", rf.commitIndex)
 
 			for i := l; i < r; i++ {
 				go func(entry LogEntry) {

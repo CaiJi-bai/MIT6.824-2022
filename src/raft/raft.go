@@ -379,15 +379,16 @@ func randomElectionTimeout() time.Duration {
 }
 
 func (rf *Raft) matchLog(term, index int) bool {
-	if term != rf.currentTerm {
-		return false
-	}
 	if index > rf.lastLogEntry().Index {
 		return false
 	}
-	if index == rf.commitIndex {
-		panic("unexpected")
+	if term != rf.log[index-rf.firstLogEntry().Index].Term {
+		return false
 	}
+
+	// if index == rf.commitIndex {
+	// 	panic("unexpected")
+	// }
 	if index < rf.commitIndex {
 		panic("unexpected")
 	}

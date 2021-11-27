@@ -1,5 +1,7 @@
 package raft
 
+import "fmt"
+
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term         int
@@ -93,43 +95,38 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.switchState(Follower, args.Term)
 	rf.electionTimer.Reset(randomElectionTimeout())
 
-	// if args.PrevLogIndex < rf.firstLogEntry().Index {
-	// 	return
-	// }
+	if args.PrevLogIndex < rf.firstLogEntry().Index {
+		panic("")
+		return
+	}
+
+	if !rf.matchLog(args.PrevLogTerm, args.PrevLogIndex) {
+		fmt.Println("failed match: ", args, rf.currentTerm, rf.lastLogEntry().Index)
+		if rf.lastLogEntry().Index < args.PrevLogIndex {
+			reply.ConflictTerm = -1
+			reply.ConflictIndex = rf.lastLogEntry().Index + 1
+		} else {
+			firstIndex := rf.firstLogEntry().Index
+			reply.ConflictTerm = rf.log[args.PrevLogIndex-firstIndex].Term
+			index := args.PrevLogIndex - 1
+			for index >= firstIndex && rf.log[index-firstIndex].Term == reply.ConflictTerm {
+				index--
+			}
+			reply.ConflictIndex = index
+		}
+		return
+	}
+
+	firstIndex := rf.firstLogEntry().Index
+	for index, entry := range args.Entries {
+		if entry.Index-firstIndex >= len(rf.log) || rf.log[entry.Index-firstIndex].Term != entry.Term {
+			rf.log = append(rf.log[:entry.Index-firstIndex], args.Entries[index:]...)
+			break
+		}
+	}
+
+	rf.advanceCommitIndexForFollower(args.LeaderCommit)
 
 	reply.Success = true
 	reply.Term = rf.currentTerm
-
-	return
-
-	// if !rf.matchLog(args.PrevLogTerm, args.PrevLogIndex) {
-	// 	if rf.lastLogEntry().Index < args.PrevLogIndex {
-	// 		reply.ConflictTerm = -1
-	// 		reply.ConflictIndex = rf.lastLogEntry().Index + 1
-	// 	} else {
-	// 		firstIndex := rf.firstLogEntry().Index
-	// 		reply.ConflictTerm = rf.log[args.PrevLogIndex-firstIndex].Term
-	// 		index := args.PrevLogIndex - 1
-	// 		for index >= firstIndex && rf.log[index-firstIndex].Term == reply.ConflictTerm {
-	// 			index--
-	// 		}
-	// 		reply.ConflictIndex = index
-	// 	}
-	// 	return
-	// }
-	//
-	// firstIndex := rf.firstLogEntry().Index
-	// for index, entry := range args.Entries {
-	// 	if entry.Index-firstIndex >= len(rf.log) || rf.log[entry.Index-firstIndex].Term != entry.Term {
-	// 		rf.log = append(rf.log[:entry.Index-firstIndex], args.Entries[index:]...)
-	// 		break
-	// 	}
-	// }
-	//
-	// newCommitIndex := Min(args.LeaderCommit, rf.lastLogEntry().Index)
-	// if newCommitIndex > rf.commitIndex {
-	// 	rf.commitIndex = newCommitIndex
-	// 	// TODO commit
-	// }
-	rf.advanceCommitIndexForFollower(args.LeaderCommit)
 }

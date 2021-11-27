@@ -1,17 +1,23 @@
 package raft
 
+import "fmt"
+
 func (rf *Raft) advanceCommitIndexForFollower(leaderCommit int) {
 	newCommitIndex := Min(leaderCommit, rf.lastLogEntry().Index)
 	if newCommitIndex > rf.commitIndex {
-		for i := rf.commitIndex + 1; i <= newCommitIndex; i++ {
-			go func(commitIndex int) {
+		l := rf.commitIndex - rf.firstLogEntry().Index + 1
+		r := newCommitIndex - rf.firstLogEntry().Index + 1
+		rf.commitIndex = newCommitIndex
+		fmt.Println("follower advance commit: ", rf.commitIndex)
+
+		for i := l; i < r; i++ {
+			go func(entry LogEntry) {
 				rf.applyCh <- ApplyMsg{
 					CommandValid: true,
-					Command:      rf.log[i-rf.firstLogEntry().Index].Command,
-					CommandIndex: rf.log[i-rf.firstLogEntry().Index].Index,
+					Command:      entry.Command,
+					CommandIndex: entry.Index,
 				}
-			}(i)
+			}(rf.log[i])
 		}
-		rf.commitIndex = newCommitIndex
 	}
 }
