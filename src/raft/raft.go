@@ -104,7 +104,7 @@ type Raft struct {
 	commitIndex int
 	lastApplied int
 
-	// v leader
+	// v leader's follower info
 	nextIndex  []int
 	matchIndex []int
 
@@ -349,6 +349,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 		electionTimer:  time.NewTimer(randomElectionTimeout()),
 		heartbeatTimer: time.NewTimer(heartbeatInterval),
+
+		applyCh: applyCh,
 	}
 
 	rf.readPersist(persister.ReadRaftState())
@@ -377,5 +379,17 @@ func randomElectionTimeout() time.Duration {
 }
 
 func (rf *Raft) matchLog(term, index int) bool {
-	return index <= rf.lastLogEntry().Index && term == rf.lastLogEntry().Term
+	if term != rf.currentTerm {
+		return false
+	}
+	if index > rf.lastLogEntry().Index {
+		return false
+	}
+	if index == rf.commitIndex {
+		panic("unexpected")
+	}
+	if index < rf.commitIndex {
+		panic("unexpected")
+	}
+	return true
 }

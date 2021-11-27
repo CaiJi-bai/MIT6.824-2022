@@ -52,7 +52,7 @@ func (rf *Raft) handleAppendEntriesReply(peer int, args *AppendEntriesArgs, repl
 		if reply.Success {
 			rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
 			rf.nextIndex[peer] = rf.matchIndex[peer] + 1
-			// rf.advanceCommitIndexForLeader()
+			rf.advanceCommitIndexForLeader()
 		} else {
 			if reply.Term > rf.currentTerm {
 				rf.switchState(Follower, reply.Term)
@@ -112,7 +112,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = entry.Index
 	rf.nextIndex[rf.me] = entry.Index + 1
 
-	fmt.Println("new cmd: ", entry.Index)
+	fmt.Println("new cmd: ", entry)
 
 	rf.broadcastHeartbeats()
 	return entry.Index, entry.Term, true

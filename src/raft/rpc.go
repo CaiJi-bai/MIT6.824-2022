@@ -131,5 +131,5 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// 	rf.commitIndex = newCommitIndex
 	// 	// TODO commit
 	// }
-
+	rf.advanceCommitIndexForFollower(args.LeaderCommit)
 }
