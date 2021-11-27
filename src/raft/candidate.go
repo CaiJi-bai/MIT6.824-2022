@@ -41,13 +41,11 @@ func (rf *Raft) election() {
 			if reply.VoteGranted {
 				votes++
 				if votes >= len(rf.peers)/2+1 {
-					rf.switchState(Leader)
+					rf.switchState(Leader, rf.currentTerm)
 					rf.broadcastHeartbeats()
 				}
 			} else if reply.Term > rf.currentTerm {
-				rf.switchState(Follower)
-				rf.currentTerm = reply.Term
-				rf.votedFor = -1
+				rf.switchState(Follower, reply.Term)
 			}
 		}(peer)
 	}

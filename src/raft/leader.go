@@ -55,10 +55,8 @@ func (rf *Raft) handleAppendEntriesReply(peer int, args *AppendEntriesArgs, repl
 			// rf.advanceCommitIndexForLeader()
 		} else {
 			if reply.Term > rf.currentTerm {
-				rf.switchState(Follower)
-				rf.currentTerm = reply.Term
-				rf.votedFor = -1
-			} else if reply.Term == rf.currentTerm {
+				rf.switchState(Follower, reply.Term)
+			} else if reply.Term == rf.currentTerm { // TODO
 				rf.nextIndex[peer] = reply.ConflictIndex
 				if reply.ConflictTerm != -1 {
 					firstIndex := rf.firstLogEntry().Index

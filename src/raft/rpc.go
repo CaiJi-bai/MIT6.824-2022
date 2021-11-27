@@ -69,9 +69,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.currentTerm {
-		rf.switchState(Follower)
-		rf.currentTerm = args.Term
-		rf.votedFor = -1
+		rf.switchState(Follower, args.Term)
 	}
 
 	// TODO is log up-to-date
@@ -90,15 +88,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.Term < rf.currentTerm {
 		return
-	} else if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.votedFor = -1
-
-	} else {
-		// TODO
 	}
 
-	rf.switchState(Follower)
+	rf.switchState(Follower, args.Term)
 	rf.electionTimer.Reset(randomElectionTimeout())
 
 	// if args.PrevLogIndex < rf.firstLogEntry().Index {

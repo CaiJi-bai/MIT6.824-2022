@@ -186,13 +186,17 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 }
 
-func (rf *Raft) switchState(state State) {
+func (rf *Raft) switchState(state State, term int) {
+	if term > rf.currentTerm && state == Follower {
+		rf.votedFor = -1
+	}
+
+	rf.currentTerm = term
+
 	if state == rf.state {
 		return
 	}
-
 	rf.state = state
-
 	switch state {
 	case Leader:
 		// TODO Leader 在网络分区时可能会有脑裂的问题
@@ -292,8 +296,7 @@ func (rf *Raft) ticker() {
 		select {
 		case <-rf.electionTimer.C:
 			rf.mu.Lock()
-			rf.switchState(Candidate)
-			rf.currentTerm = rf.currentTerm + 1
+			rf.switchState(Candidate, rf.currentTerm+1)
 			rf.election()
 			rf.electionTimer.Reset(randomElectionTimeout())
 			rf.mu.Unlock()
