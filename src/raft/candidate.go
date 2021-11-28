@@ -3,7 +3,7 @@ package raft
 import "fmt"
 
 func (rf *Raft) election() {
-	fmt.Println("electing: ", rf.me, " - ", rf.currentTerm)
+	fmt.Println("[electing]", rf.me, " - ", rf.currentTerm)
 
 	n := len(rf.log)
 	currentTerm := rf.currentTerm

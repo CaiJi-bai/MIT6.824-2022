@@ -74,13 +74,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.switchState(Follower, args.Term)
 	}
 
-	// TODO is log up-to-date
-	// if rf.commitIndex > args.LastLogIndex {
-	// 	return
-	// }
+	if !rf.isLogUpToDate(args.LastLogTerm, args.LastLogIndex) {
+		return // 不够新不给投
+	}
 	rf.votedFor = args.CandidateID
 	rf.electionTimer.Reset(randomElectionTimeout())
 	reply.VoteGranted = true
+}
+
+func (rf *Raft) isLogUpToDate(term, index int) bool {
+	lastLog := rf.lastLogEntry()
+	return term > lastLog.Term || (term == lastLog.Term && index >= lastLog.Index)
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -92,7 +96,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	rf.switchState(Follower, args.Term)
+	rf.switchState(Follower, args.Term) // TODO candidate term 领先还是会一直？
 	rf.electionTimer.Reset(randomElectionTimeout())
 
 	if args.PrevLogIndex < rf.firstLogEntry().Index {

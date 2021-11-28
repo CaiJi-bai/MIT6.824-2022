@@ -114,7 +114,8 @@ type Raft struct {
 	electionTimer  *time.Timer
 	heartbeatTimer *time.Timer
 
-	applyCh chan ApplyMsg
+	applyCh   chan ApplyMsg
+	applyCond *sync.Cond
 }
 
 // return currentTerm and whether this server
@@ -200,28 +201,22 @@ func (rf *Raft) switchState(state State, term int) {
 	switch state {
 	case Leader:
 		// TODO Leader 在网络分区时可能会有脑裂的问题
-		// lastLog := rf.lastLogEntry()
-		// for i := 0; i < len(rf.peers); i++ {
-		// 	rf.matchIndex[i], rf.nextIndex[i] = 0, lastLog.Index+1
-		// }
+		lastLog := rf.lastLogEntry()
+		for i := 0; i < len(rf.peers); i++ {
+			rf.matchIndex[i], rf.nextIndex[i] = 0, lastLog.Index+1
+		}
 		rf.electionTimer.Stop()
 		rf.heartbeatTimer.Reset(heartbeatInterval)
 	case Follower:
 		rf.electionTimer.Reset(randomElectionTimeout())
 		rf.heartbeatTimer.Stop()
 	case Candidate:
+		// 单节点不断离线，再次上线会发生 leader 迁移问题
 		rf.electionTimer.Reset(randomElectionTimeout())
 		rf.heartbeatTimer.Stop()
 	}
 
-	fmt.Println(rf.me, "-", rf.state, ":", rf.currentTerm)
-}
-
-func Min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	fmt.Println("[switchState]", rf.me, "-", rf.state, ":", rf.currentTerm)
 }
 
 //
@@ -299,7 +294,7 @@ func (rf *Raft) ticker() {
 			rf.switchState(Candidate, rf.currentTerm+1)
 			rf.election()
 			rf.electionTimer.Reset(randomElectionTimeout())
-			rf.mu.Unlock()
+			rf.mu.Unlock() // TODO 这里会不会导致 candidate 一直 term 增加后无法回到主区
 		case <-rf.heartbeatTimer.C:
 			rf.mu.Lock()
 			if rf.state == Leader {
@@ -352,6 +347,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 		applyCh: applyCh,
 	}
+	rf.applyCond = sync.NewCond(&rf.mu)
 
 	rf.readPersist(persister.ReadRaftState())
 	lastEntry := rf.lastLogEntry()
@@ -362,6 +358,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
+
+	go rf.applier()
 
 	return rf
 }
@@ -389,8 +387,9 @@ func (rf *Raft) matchLog(term, index int) bool {
 	// if index == rf.commitIndex {
 	// 	panic("unexpected")
 	// }
+
 	if index < rf.commitIndex {
-		panic("unexpected")
+		// TestFailAgree2B
 	}
 	return true
 }

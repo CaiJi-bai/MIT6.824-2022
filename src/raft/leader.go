@@ -41,6 +41,7 @@ func (rf *Raft) replicateOneRound(peer int) {
 		response := &AppendEntriesReply{}
 		if rf.sendAppendEntries(peer, request, response) {
 			rf.mu.Lock()
+			fmt.Println("[sendAppendEntries]", rf.me, "->", peer, ":", request, response)
 			rf.handleAppendEntriesReply(peer, request, response)
 			rf.mu.Unlock()
 		}
@@ -77,25 +78,15 @@ func (rf *Raft) advanceCommitIndexForLeader() {
 	n := len(rf.matchIndex)
 	srt := make([]int, n)
 	copy(srt, rf.matchIndex)
+	fmt.Println(srt)
 	sort.Ints(srt)
 	newCommitIndex := srt[n-(n/2+1)]
 	if newCommitIndex > rf.commitIndex {
 		// only advance commitIndex for current term's log
 		if rf.matchLog(rf.currentTerm, newCommitIndex) {
-			l := rf.commitIndex - rf.firstLogEntry().Index + 1
-			r := newCommitIndex - rf.firstLogEntry().Index + 1
 			rf.commitIndex = newCommitIndex
-			fmt.Println("leader advance commit: ", rf.commitIndex)
-
-			for i := l; i < r; i++ {
-				go func(entry LogEntry) {
-					rf.applyCh <- ApplyMsg{
-						CommandValid: true,
-						Command:      entry.Command,
-						CommandIndex: entry.Index,
-					}
-				}(rf.log[i])
-			}
+			fmt.Println("[advance]leader advance commit: ", rf.commitIndex)
+			rf.applyCond.Signal()
 		}
 	}
 }
@@ -112,7 +103,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = entry.Index
 	rf.nextIndex[rf.me] = entry.Index + 1
 
-	fmt.Println("new cmd: ", entry)
+	fmt.Println("[cmd]new cmd ->", rf.me, ":", entry)
 
 	rf.broadcastHeartbeats()
 	return entry.Index, entry.Term, true
