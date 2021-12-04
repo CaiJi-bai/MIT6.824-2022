@@ -24,7 +24,20 @@ func (rf *Raft) replicateOneRound(peer int) {
 	}
 	prevLogIndex := rf.nextIndex[peer] - 1
 	if prevLogIndex < rf.firstLogEntry().Index {
-		panic("TODO")
+		args := &InstallSnapshotArgs{
+			Term:              rf.currentTerm,
+			LeaderId:          rf.me,
+			LastIncludedIndex: rf.firstLogEntry().Index,
+			LastIncludedTerm:  rf.firstLogEntry().Term,
+			Data:              rf.persister.ReadSnapshot(),
+		}
+		rf.mu.Unlock()
+		reply := &InstallSnapshotReply{}
+		if rf.sendInstallSnapshot(peer, args, reply) {
+			rf.mu.Lock()
+			rf.handleInstallSnapshotReply(peer, args, reply)
+			rf.mu.Unlock()
+		}
 	} else {
 		firstIndex := rf.firstLogEntry().Index
 		entries := make([]LogEntry, len(rf.log[prevLogIndex+1-firstIndex:]))
@@ -45,6 +58,19 @@ func (rf *Raft) replicateOneRound(peer int) {
 			rf.handleAppendEntriesReply(peer, request, response)
 			rf.mu.Unlock()
 		}
+	}
+}
+
+func (rf *Raft) handleInstallSnapshotReply(peer int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	if rf.state != Leader || rf.currentTerm != args.Term {
+		return
+	}
+
+	if reply.Term > rf.currentTerm {
+		rf.switchState(Follower, reply.Term)
+		rf.newVotedFor(-1)
+	} else {
+		rf.matchIndex[peer], rf.nextIndex[peer] = args.LastIncludedIndex, args.LastIncludedIndex+1
 	}
 }
 

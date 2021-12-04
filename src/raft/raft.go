@@ -136,7 +136,25 @@ func (rf *Raft) GetState() (term int, isleader bool) {
 //
 func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
 
-	// Your code here (2D).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// outdated snapshot
+	if lastIncludedIndex <= rf.commitIndex {
+		return false
+	}
+
+	if lastIncludedIndex > rf.lastLogEntry().Index {
+		rf.log = make([]LogEntry, 1)
+	} else {
+		rf.log = rf.log[lastIncludedIndex-rf.firstLogEntry().Index:]
+		rf.log[0].Command = nil
+	}
+	// update dummy entry with lastIncludedTerm and lastIncludedIndex
+	rf.log[0].Term, rf.log[0].Index = lastIncludedTerm, lastIncludedIndex
+	rf.lastApplied, rf.commitIndex = lastIncludedIndex, lastIncludedIndex
+
+	rf.persister.SaveStateAndSnapshot(rf.encodeState(), snapshot)
 
 	return true
 }
@@ -146,8 +164,15 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	snapshotIndex := rf.firstLogEntry().Index
+	if index <= snapshotIndex {
+		return
+	}
+	rf.log = rf.log[index-snapshotIndex:]
+	rf.log[0].Command = nil
+	rf.persister.SaveStateAndSnapshot(rf.encodeState(), snapshot)
 }
 
 func (rf *Raft) switchState(state State, term int) {

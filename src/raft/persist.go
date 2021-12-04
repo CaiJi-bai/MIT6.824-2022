@@ -36,12 +36,17 @@ func (rf *Raft) readPersist(data []byte) {
 // see paper's Figure 2 for a description of what should be persistent.
 //
 func (rf *Raft) persist() {
+
+	rf.persister.SaveRaftState(rf.encodeState())
+}
+
+func (rf *Raft) encodeState() []byte {
 	buf := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(buf)
 	encoder.Encode(rf.currentTerm)
 	encoder.Encode(rf.votedFor)
 	encoder.Encode(rf.log)
-	rf.persister.SaveRaftState(buf.Bytes())
+	return buf.Bytes()
 }
 
 func (rf *Raft) newVotedFor(newVotedFor int) {

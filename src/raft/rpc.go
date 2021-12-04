@@ -1,6 +1,8 @@
 package raft
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
@@ -61,6 +63,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() { reply.Term = rf.currentTerm }()
+	defer func() { fmt.Println(args, reply) }()
+
+	fmt.Println(rf.state, rf.currentTerm, rf.lastLogEntry().Index, rf.lastLogEntry().Term)
 
 	if args.Term < rf.currentTerm {
 		return
@@ -101,7 +106,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.electionTimer.Reset(randomElectionTimeout())
 
 	if args.PrevLogIndex < rf.firstLogEntry().Index {
-		panic("")
 		return
 	}
 
@@ -134,4 +138,37 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	reply.Success = true
 	reply.Term = rf.currentTerm
+}
+
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	reply.Term = rf.currentTerm
+
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	if args.Term > rf.currentTerm {
+		rf.currentTerm, rf.votedFor = args.Term, -1
+		rf.persist()
+	}
+
+	rf.switchState(Follower, rf.currentTerm)
+	rf.electionTimer.Reset(randomElectionTimeout())
+
+	// outdated snapshot
+	if args.LastIncludedIndex <= rf.commitIndex {
+		return
+	}
+
+	go func() {
+		rf.applyCh <- ApplyMsg{
+			SnapshotValid: true,
+			Snapshot:      args.Data,
+			SnapshotTerm:  args.LastIncludedTerm,
+			SnapshotIndex: args.LastIncludedIndex,
+		}
+	}()
 }

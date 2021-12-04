@@ -5,13 +5,13 @@ import "fmt"
 func (rf *Raft) election() {
 	fmt.Println("[electing]", rf.me, " - ", rf.currentTerm)
 
-	n := len(rf.log)
+	lastEntry := rf.lastLogEntry()
 	currentTerm := rf.currentTerm
 	args := &RequestVoteArgs{
 		Term:         currentTerm,
 		CandidateID:  rf.me,
-		LastLogIndex: n - 1,
-		LastLogTerm:  rf.log[n-1].Term,
+		LastLogIndex: lastEntry.Index,
+		LastLogTerm:  lastEntry.Term,
 	}
 
 	rf.newVotedFor(rf.me)
