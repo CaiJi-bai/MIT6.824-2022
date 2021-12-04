@@ -103,6 +103,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.matchIndex[rf.me] = entry.Index
 	rf.nextIndex[rf.me] = entry.Index + 1
 
+	rf.persist()
+
 	fmt.Println("[cmd]new cmd ->", rf.me, ":", entry)
 
 	rf.broadcastHeartbeats()

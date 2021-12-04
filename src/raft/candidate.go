@@ -14,7 +14,7 @@ func (rf *Raft) election() {
 		LastLogTerm:  rf.log[n-1].Term,
 	}
 
-	rf.votedFor = rf.me
+	rf.newVotedFor(rf.me)
 	votes := 1
 
 	for peer := range rf.peers {

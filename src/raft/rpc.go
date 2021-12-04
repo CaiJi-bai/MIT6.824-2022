@@ -77,7 +77,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if !rf.isLogUpToDate(args.LastLogTerm, args.LastLogIndex) {
 		return // 不够新不给投
 	}
-	rf.votedFor = args.CandidateID
+	rf.newVotedFor(args.CandidateID)
 	rf.electionTimer.Reset(randomElectionTimeout())
 	reply.VoteGranted = true
 }
@@ -90,6 +90,7 @@ func (rf *Raft) isLogUpToDate(term, index int) bool {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 	defer func() { reply.Term = rf.currentTerm }()
 
 	if args.Term < rf.currentTerm {
