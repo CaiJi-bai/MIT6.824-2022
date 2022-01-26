@@ -20,7 +20,6 @@ package raft
 import (
 	//	"bytes"
 
-	"fmt"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -60,6 +59,7 @@ type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{}
 	CommandIndex int
+	CommandTerm  int
 
 	// For 2D:
 	SnapshotValid bool
@@ -128,6 +128,10 @@ func (rf *Raft) GetState() (term int, isleader bool) {
 	rf.mu.Unlock()
 
 	return
+}
+
+func (rf *Raft) Me() int {
+	return rf.me
 }
 
 //
@@ -206,7 +210,7 @@ func (rf *Raft) switchState(state State, term int) {
 		rf.heartbeatTimer.Stop()
 	}
 
-	fmt.Println("[switchState]", rf.me, "-", rf.state, ":", rf.currentTerm)
+	// fmt.Println("[switchState]", rf.me, "-", rf.state, ":", rf.currentTerm)
 }
 
 //

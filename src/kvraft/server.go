@@ -1,9 +1,11 @@
 package kvraft
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"6.824/labgob"
 	"6.824/labrpc"
@@ -19,14 +21,16 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-type Op struct {
+type OperationContext struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	LastResponse *CommandResponse
+	CommandId    int64
 }
 
 type KVServer struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	me      int
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
@@ -40,12 +44,135 @@ type KVServer struct {
 	notifyChans    map[int]chan *CommandResponse // notify client goroutine by applier goroutine to response
 }
 
-func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
+func (kv *KVServer) Command(request *CommandRequest, response *CommandResponse) {
+	// return result directly without raft layer's participation if request is duplicated
+	kv.mu.RLock()
+	if request.Op != "Get" && kv.isDuplicateRequest(request.ClientId, request.CommandId) {
+		lastResponse := kv.lastOperations[request.ClientId].LastResponse
+		response.Value, response.Err = lastResponse.Value, lastResponse.Err
+		kv.mu.RUnlock()
+		return
+	}
+	kv.mu.RUnlock()
+	// do not hold lock to improve throughput
+	// when KVServer holds the lock to take snapshot, underlying raft can still commit raft logs
+	index, _, isLeader := kv.rf.Start(request)
+	if !isLeader {
+		response.Err = ErrWrongLeader
+		return
+	}
+	kv.mu.Lock()
+	ch := kv.getNotifyChan(index)
+	kv.mu.Unlock()
+
+	select {
+	case result := <-ch:
+		response.Value, response.Err = result.Value, result.Err
+	case <-time.After(time.Second):
+		response.Err = "ErrTimeout"
+	}
+	// release notifyChan to reduce memory footprint
+	// why asynchronously? to improve throughput, here is no need to block client request
+	go func() {
+		kv.mu.Lock()
+		// kv.removeOutdatedNotifyChan(index)
+		kv.mu.Unlock()
+	}()
 }
 
-func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+func (kv *KVServer) isDuplicateRequest(clientId, CommandId int64) bool {
+	r, ok := kv.lastOperations[clientId]
+	if ok && r.CommandId == CommandId {
+		return true
+	}
+	if ok && r.CommandId > CommandId {
+		panic("")
+	}
+	return false
+}
+
+func (kv *KVServer) getNotifyChan(clientId int) chan *CommandResponse {
+	c, ok := kv.notifyChans[clientId]
+	if ok {
+		return c
+	}
+	c = make(chan *CommandResponse)
+	kv.notifyChans[clientId] = c
+	return c
+}
+
+// a dedicated applier goroutine to apply committed entries to stateMachine, take snapshot and apply snapshot from raft
+func (kv *KVServer) applier() {
+	for kv.killed() == false {
+		select {
+		case message := <-kv.applyCh:
+			DPrintf("{Node %v} tries to apply message %v", kv.rf.Me(), message)
+			if message.CommandValid {
+				kv.mu.Lock()
+				if message.CommandIndex <= kv.lastApplied {
+					DPrintf("{Node %v} discards outdated message %v because a newer snapshot which lastApplied is %v has been restored", kv.rf.Me(), message, kv.lastApplied)
+					kv.mu.Unlock()
+					continue
+				}
+				kv.lastApplied = message.CommandIndex
+
+				var response *CommandResponse
+				command, ok := message.Command.(*CommandRequest)
+				if !ok {
+					c_ := message.Command.(CommandRequest)
+					command = &c_
+				}
+				if command.Op != "Get" && kv.isDuplicateRequest(command.ClientId, command.CommandId) {
+					DPrintf("{Node %v} doesn't apply duplicated message %v to stateMachine because maxAppliedCommandId is %v for client %v", kv.rf.Me(), message, kv.lastOperations[command.ClientId], command.ClientId)
+					response = kv.lastOperations[command.ClientId].LastResponse
+				} else {
+					response = kv.applyLogToStateMachine(command)
+					if command.Op != "Get" {
+						kv.lastOperations[command.ClientId] = OperationContext{response, command.CommandId}
+					}
+				}
+
+				// only notify related channel for currentTerm's log when node is leader
+				if currentTerm, isLeader := kv.rf.GetState(); isLeader && message.CommandTerm == currentTerm {
+					ch := kv.getNotifyChan(message.CommandIndex)
+					ch <- response
+				}
+
+				// needSnapshot := kv.needSnapshot()
+				// if needSnapshot {
+				// 	kv.takeSnapshot(message.CommandIndex)
+				// }
+				kv.mu.Unlock()
+			} else if message.SnapshotValid {
+				kv.mu.Lock()
+				if kv.rf.CondInstallSnapshot(message.SnapshotTerm, message.SnapshotIndex, message.Snapshot) {
+					//kv.restoreSnapshot(message.Snapshot)
+					kv.lastApplied = message.SnapshotIndex
+				}
+				kv.mu.Unlock()
+			} else {
+				panic(fmt.Sprintf("unexpected Message %v", message))
+			}
+		}
+	}
+}
+
+func (kv *KVServer) applyLogToStateMachine(command *CommandRequest) *CommandResponse {
+	rsp := &CommandResponse{}
+	switch command.Op {
+	case "Get":
+		res, err := kv.stateMachine.Get(command.Key)
+		rsp.Value, rsp.Err = res, string(err)
+	case "Put":
+		err := kv.stateMachine.Put(command.Key, command.Value)
+		rsp.Value, rsp.Err = "", string(err)
+	case "Append":
+		err := kv.stateMachine.Append(command.Key, command.Value)
+		rsp.Value, rsp.Err = "", string(err)
+	default:
+		panic("")
+	}
+	return rsp
 }
 
 //
@@ -86,18 +213,20 @@ func (kv *KVServer) killed() bool {
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Op{})
+	labgob.Register(CommandRequest{})
+	labgob.Register(CommandResponse{})
 
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
-
-	// You may need initialization code here.
-
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
-	// You may need initialization code here.
+	kv.stateMachine = NewMemoryKV()
+	kv.lastOperations = map[int64]OperationContext{}
+	kv.notifyChans = map[int]chan *CommandResponse{}
+
+	go kv.applier()
 
 	return kv
 }

@@ -1,9 +1,7 @@
 package raft
 
-import "fmt"
-
 func (rf *Raft) election() {
-	fmt.Println("[electing]", rf.me, " - ", rf.currentTerm)
+	// fmt.Println("[electing]", rf.me, " - ", rf.currentTerm)
 
 	lastEntry := rf.lastLogEntry()
 	currentTerm := rf.currentTerm

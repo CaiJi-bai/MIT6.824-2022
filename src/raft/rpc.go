@@ -1,9 +1,5 @@
 package raft
 
-import (
-	"fmt"
-)
-
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term         int
@@ -63,9 +59,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer func() { reply.Term = rf.currentTerm }()
-	defer func() { fmt.Println(args, reply) }()
+	// defer func() { fmt.Println(args, reply) }()
 
-	fmt.Println(rf.state, rf.currentTerm, rf.lastLogEntry().Index, rf.lastLogEntry().Term)
+	// fmt.Println(rf.state, rf.currentTerm, rf.lastLogEntry().Index, rf.lastLogEntry().Term)
 
 	if args.Term < rf.currentTerm {
 		return
@@ -110,7 +106,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	if !rf.matchLog(args.PrevLogTerm, args.PrevLogIndex) {
-		fmt.Println("failed match: ", args, rf.currentTerm, rf.lastLogEntry().Index)
+		// fmt.Println("failed match: ", args, rf.currentTerm, rf.lastLogEntry().Index)
 		if rf.lastLogEntry().Index < args.PrevLogIndex {
 			reply.ConflictTerm = -1
 			reply.ConflictIndex = rf.lastLogEntry().Index + 1

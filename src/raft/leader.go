@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"sort"
 )
 
@@ -54,7 +53,7 @@ func (rf *Raft) replicateOneRound(peer int) {
 		response := &AppendEntriesReply{}
 		if rf.sendAppendEntries(peer, request, response) {
 			rf.mu.Lock()
-			fmt.Println("[sendAppendEntries]", rf.me, "->", peer, ":", request, response)
+			// fmt.Println("[sendAppendEntries]", rf.me, "->", peer, ":", request, response)
 			rf.handleAppendEntriesReply(peer, request, response)
 			rf.mu.Unlock()
 		}
@@ -104,14 +103,14 @@ func (rf *Raft) advanceCommitIndexForLeader() {
 	n := len(rf.matchIndex)
 	srt := make([]int, n)
 	copy(srt, rf.matchIndex)
-	fmt.Println(srt)
+	// fmt.Println(srt)
 	sort.Ints(srt)
 	newCommitIndex := srt[n-(n/2+1)]
 	if newCommitIndex > rf.commitIndex {
 		// only advance commitIndex for current term's log
 		if rf.matchLog(rf.currentTerm, newCommitIndex) {
 			rf.commitIndex = newCommitIndex
-			fmt.Println("[advance]leader advance commit: ", rf.commitIndex)
+			// fmt.Println("[advance]leader advance commit: ", rf.commitIndex)
 			rf.applyCond.Signal()
 		}
 	}
@@ -131,7 +130,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	rf.persist()
 
-	fmt.Println("[cmd]new cmd ->", rf.me, ":", entry)
+	// fmt.Println("[cmd]new cmd ->", rf.me, ":", entry)
 
 	rf.broadcastHeartbeats()
 	return entry.Index, entry.Term, true
