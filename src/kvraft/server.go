@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"sync"
@@ -42,6 +43,7 @@ type KVServer struct {
 	stateMachine   KVStateMachine                // KV stateMachine
 	lastOperations map[int64]OperationContext    // determine whether log is duplicated by recording the last commandId and response corresponding to the clientId
 	notifyChans    map[int]chan *CommandResponse // notify client goroutine by applier goroutine to response
+	persister      *raft.Persister
 }
 
 func (kv *KVServer) Command(request *CommandRequest, response *CommandResponse) {
@@ -138,16 +140,21 @@ func (kv *KVServer) applier() {
 					ch <- response
 				}
 
-				// needSnapshot := kv.needSnapshot()
-				// if needSnapshot {
-				// 	kv.takeSnapshot(message.CommandIndex)
-				// }
+				needSnapshot := kv.needSnapshot()
+				if needSnapshot {
+					// kv.takeSnapshot(message.CommandIndex)
+					w := new(bytes.Buffer)
+					e := labgob.NewEncoder(w)
+					e.Encode(kv.stateMachine)
+					e.Encode(kv.lastOperations)
+					data := w.Bytes()
+					kv.rf.Snapshot(message.CommandIndex, data)
+				}
 				kv.mu.Unlock()
 			} else if message.SnapshotValid {
 				kv.mu.Lock()
 				if kv.rf.CondInstallSnapshot(message.SnapshotTerm, message.SnapshotIndex, message.Snapshot) {
-					//kv.restoreSnapshot(message.Snapshot)
-					kv.lastApplied = message.SnapshotIndex
+					kv.readPersist(message.Snapshot)
 				}
 				kv.mu.Unlock()
 			} else {
@@ -155,6 +162,26 @@ func (kv *KVServer) applier() {
 			}
 		}
 	}
+}
+
+func (kv *KVServer) readPersist(data []byte) {
+	if data == nil || len(data) < 1 {
+		return
+	}
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var sm *MemoryKV = &MemoryKV{}
+	var ls map[int64]OperationContext = make(map[int64]OperationContext)
+	if d.Decode(sm) == nil && d.Decode(&ls) == nil {
+		kv.stateMachine = sm
+		kv.lastOperations = ls
+	} else {
+		panic("")
+	}
+}
+
+func (kv *KVServer) needSnapshot() bool {
+	return kv.maxraftstate != -1 && float32(kv.persister.RaftStateSize()) > float32(kv.maxraftstate)*0.95
 }
 
 func (kv *KVServer) applyLogToStateMachine(command *CommandRequest) *CommandResponse {
@@ -225,6 +252,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.stateMachine = NewMemoryKV()
 	kv.lastOperations = map[int64]OperationContext{}
 	kv.notifyChans = map[int]chan *CommandResponse{}
+
+	kv.persister = persister
+	kv.readPersist(persister.ReadSnapshot())
 
 	go kv.applier()
 
