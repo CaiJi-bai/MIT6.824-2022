@@ -127,6 +127,7 @@ func TestBasic(t *testing.T) {
 		cfg.ShutdownServer(s)
 		for i := 0; i < len(cfa); i++ {
 			c := ck.Query(cfa[i].Num)
+			fmt.Println("IsSame: ", s, i, c, cfa[i])
 			check_same_config(t, c, cfa[i])
 		}
 		cfg.StartServer(s)
@@ -397,6 +398,7 @@ func TestMulti(t *testing.T) {
 	}
 
 	c1 = ck.Query(-1)
+	fmt.Println("Check: ", c1, c)
 	check_same_config(t, c, c1)
 
 	fmt.Printf("  ... Passed\n")

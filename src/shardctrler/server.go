@@ -11,63 +11,6 @@ import (
 	"6.824/raft"
 )
 
-func NewMemoryShardCtrler() MemoryShardCtrler {
-	return nil
-}
-
-type memoryShardCtrler struct {
-	Configs []Config // indexed by config num
-}
-
-func (cf *memoryShardCtrler) Join(args *JoinArgs) *JoinReply {
-	reply := &JoinReply{}
-	return reply
-}
-
-func (sc *memoryShardCtrler) Leave(args *LeaveArgs) *LeaveReply {
-	reply := &LeaveReply{}
-
-	newConfig := Config{}
-	length := len(sc.Configs)
-	newConfig.Num = sc.Configs[length-1].Num + 1
-	newConfig.Shards = sc.Configs[length-1].Shards
-	newConfig.Groups = make(map[int][]string)
-	for gid, servers := range sc.Configs[length-1].Groups {
-		newConfig.Groups[gid] = servers
-	}
-
-	return reply
-}
-
-func (sc *memoryShardCtrler) Move(args *MoveArgs) *MoveReply {
-	reply := &MoveReply{}
-
-	newConfig := Config{}
-	length := len(sc.Configs)
-	newConfig.Num = sc.Configs[length-1].Num + 1
-	newConfig.Shards = sc.Configs[length-1].Shards
-	newConfig.Groups = make(map[int][]string)
-	for gid, servers := range sc.Configs[length-1].Groups {
-		newConfig.Groups[gid] = servers
-	}
-
-	newConfig.Shards[args.Shard] = args.GID
-
-	sc.Configs = append(sc.Configs, newConfig)
-
-	return reply
-}
-
-func (sc *memoryShardCtrler) Query(args *QueryArgs) *QueryReply {
-	reply := &QueryReply{}
-	if args.Num == -1 || args.Num > len(sc.Configs) {
-		reply.Config = sc.Configs[len(sc.Configs)-1]
-	} else {
-		reply.Config = sc.Configs[args.Num]
-	}
-	return reply
-}
-
 type ShardCtrler struct {
 	mu      sync.RWMutex
 	me      int
@@ -91,12 +34,13 @@ type OperationContext struct {
 }
 
 type CommandResponse struct {
-	joinReply  *JoinReply
-	leaveReply *LeaveReply
-	moveReply  *MoveReply
-	queryReply *QueryReply
+	JoinReply  *JoinReply
+	LeaveReply *LeaveReply
+	MoveReply  *MoveReply
+	QueryReply *QueryReply
 
-	Err string
+	WrongLeader bool
+	Err         string
 }
 
 type MemoryShardCtrler interface {
@@ -107,10 +51,10 @@ type MemoryShardCtrler interface {
 }
 
 type CommandRequest struct {
-	joinArgs  *JoinArgs
-	leaveArgs *LeaveArgs
-	moveArgs  *MoveArgs
-	queryArgs *QueryArgs
+	JoinArgs  *JoinArgs
+	LeaveArgs *LeaveArgs
+	MoveArgs  *MoveArgs
+	QueryArgs *QueryArgs
 
 	ClientId, CommandId int64
 	Op                  string
@@ -120,17 +64,17 @@ func (sc *ShardCtrler) applyLogToStateMachine(command *CommandRequest) *CommandR
 	rsp := &CommandResponse{}
 	switch command.Op {
 	case "Join":
-		reply := sc.stateMachine.Join(command.joinArgs)
-		rsp.joinReply = reply
+		reply := sc.stateMachine.Join(command.JoinArgs)
+		rsp.JoinReply = reply
 	case "Leave":
-		reply := sc.stateMachine.Leave(command.leaveArgs)
-		rsp.leaveReply = reply
+		reply := sc.stateMachine.Leave(command.LeaveArgs)
+		rsp.LeaveReply = reply
 	case "Move":
-		reply := sc.stateMachine.Move(command.moveArgs)
-		rsp.moveReply = reply
+		reply := sc.stateMachine.Move(command.MoveArgs)
+		rsp.MoveReply = reply
 	case "Query":
-		reply := sc.stateMachine.Query(command.queryArgs)
-		rsp.queryReply = reply
+		reply := sc.stateMachine.Query(command.QueryArgs)
+		rsp.QueryReply = reply
 	default:
 		panic("")
 	}
@@ -139,49 +83,58 @@ func (sc *ShardCtrler) applyLogToStateMachine(command *CommandRequest) *CommandR
 
 func (sc *ShardCtrler) Join(args *JoinArgs, reply *JoinReply) {
 	args_ := &CommandRequest{}
-	reply_ := &CommandResponse{}
-	args_.joinArgs = args
+	args_.JoinArgs = args
 	args_.ClientId = args.ClientId
 	args_.CommandId = args.CommandId
 	args_.Op = "Join"
 
-	sc.Command(args_, reply_)
+	reply_ := sc.Command(args_)
+	reply.Err = Err(reply_.Err)
+	reply.WrongLeader = reply_.WrongLeader
 }
 
 func (sc *ShardCtrler) Leave(args *LeaveArgs, reply *LeaveReply) {
 	args_ := &CommandRequest{}
-	reply_ := &CommandResponse{}
-	args_.leaveArgs = args
+	args_.LeaveArgs = args
 	args_.ClientId = args.ClientId
 	args_.CommandId = args.CommandId
 	args_.Op = "Leave"
 
-	sc.Command(args_, reply_)
+	reply_ := sc.Command(args_)
+	reply.Err = Err(reply_.Err)
+	reply.WrongLeader = reply_.WrongLeader
 }
 
 func (sc *ShardCtrler) Move(args *MoveArgs, reply *MoveReply) {
 	args_ := &CommandRequest{}
-	reply_ := &CommandResponse{}
-	args_.moveArgs = args
+	args_.MoveArgs = args
 	args_.ClientId = args.ClientId
 	args_.CommandId = args.CommandId
 	args_.Op = "Move"
 
-	sc.Command(args_, reply_)
+	reply_ := sc.Command(args_)
+	reply.Err = Err(reply_.Err)
+	reply.WrongLeader = reply_.WrongLeader
 }
 
 func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 	args_ := &CommandRequest{}
-	reply_ := &CommandResponse{}
-	args_.queryArgs = args
+	args_.QueryArgs = args
 	args_.ClientId = args.ClientId
 	args_.CommandId = args.CommandId
 	args_.Op = "Query"
 
-	sc.Command(args_, reply_)
+	reply_ := sc.Command(args_)
+	reply.Err = Err(reply_.Err)
+	reply.WrongLeader = reply_.WrongLeader
+	if reply_.QueryReply != nil {
+		reply.Config = reply_.QueryReply.Config
+	}
 }
 
-func (sc *ShardCtrler) Command(request *CommandRequest, response *CommandResponse) {
+func (sc *ShardCtrler) Command(request *CommandRequest) (response *CommandResponse) {
+	response = &CommandResponse{}
+
 	// return result directly without raft layer's participation if request is duplicated
 	sc.mu.RLock()
 	if request.Op != "Query" && sc.isDuplicateRequest(request.ClientId, request.CommandId) {
@@ -191,11 +144,11 @@ func (sc *ShardCtrler) Command(request *CommandRequest, response *CommandRespons
 		return
 	}
 	sc.mu.RUnlock()
-	// do not hold lock to improve throughput
-	// when KVServer holds the lock to take snapshot, underlying raft can still commit raft logs
+
 	index, _, isLeader := sc.rf.Start(request)
 	if !isLeader {
 		response.Err = "ErrWrongLeader"
+		response.WrongLeader = true
 		return
 	}
 	sc.mu.Lock()
@@ -215,6 +168,7 @@ func (sc *ShardCtrler) Command(request *CommandRequest, response *CommandRespons
 		// kv.removeOutdatedNotifyChan(index)
 		sc.mu.Unlock()
 	}()
+	return
 }
 
 //
@@ -240,6 +194,9 @@ func (sc *ShardCtrler) Raft() *raft.Raft {
 // me is the index of the current server in servers[].
 //
 func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister) *ShardCtrler {
+	labgob.Register(CommandRequest{})
+	labgob.Register(CommandResponse{})
+
 	sc := new(ShardCtrler)
 	sc.me = me
 	sc.applyCh = make(chan raft.ApplyMsg)
