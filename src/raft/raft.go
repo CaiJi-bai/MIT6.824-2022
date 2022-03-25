@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	//	"6.824/labgob"
 
@@ -39,8 +40,8 @@ const (
 )
 
 const (
-	electionTimeout     time.Duration = 200 * time.Millisecond
-	electionTimeoutMore time.Duration = 100 * time.Millisecond
+	electionTimeout     time.Duration = 150 * time.Millisecond
+	electionTimeoutMore time.Duration = 150 * time.Millisecond
 	heartbeatInterval   time.Duration = 100 * time.Millisecond
 )
 
@@ -83,6 +84,7 @@ type Heartbeat struct {
 // A Go object implementing a single Raft peer.
 //
 type Raft struct {
+	id        uintptr
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
@@ -125,6 +127,26 @@ func (rf *Raft) GetState() (term int, isleader bool) {
 	rf.mu.Lock()
 	term = rf.currentTerm
 	isleader = (rf.state == Leader)
+	rf.mu.Unlock()
+
+	return
+}
+
+func (rf *Raft) GetStateX() (term int, who string) {
+	rf.mu.Lock()
+	term = rf.currentTerm
+	who = string(rf.state)
+	rf.mu.Unlock()
+
+	return
+}
+
+func (rf *Raft) GetStateXX() (term int, who string, me int, g int) {
+	rf.mu.Lock()
+	term = rf.currentTerm
+	who = string(rf.state)
+	me = rf.me
+	g = int(rf.id)
 	rf.mu.Unlock()
 
 	return
@@ -186,6 +208,10 @@ func (rf *Raft) switchState(state State, term int) {
 		rf.votedFor = -1
 	}
 
+	if rf.currentTerm != term || rf.state != state {
+		DPrintf("[switchState %v:%v] %v:%v => %v:%v", rf.id, rf.me, rf.state, rf.currentTerm, state, term)
+	}
+
 	rf.currentTerm = term
 
 	if state == rf.state {
@@ -210,7 +236,6 @@ func (rf *Raft) switchState(state State, term int) {
 		rf.heartbeatTimer.Stop()
 	}
 
-	// fmt.Println("[switchState]", rf.me, "-", rf.state, ":", rf.currentTerm)
 }
 
 //
@@ -315,6 +340,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	n := len(peers)
 	rf := &Raft{
+		id:        (uintptr(unsafe.Pointer(peers[0])) / 1024) % 128,
 		peers:     peers,
 		persister: persister,
 		me:        me,

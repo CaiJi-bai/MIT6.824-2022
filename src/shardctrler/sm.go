@@ -1,5 +1,7 @@
 package shardctrler
 
+import "fmt"
+
 func NewMemoryShardCtrler() MemoryShardCtrler {
 	c := Config{Groups: map[int][]string{}}
 	return &memoryShardCtrler{[]Config{c}}
@@ -45,6 +47,8 @@ func (cf *memoryShardCtrler) Join(args *JoinArgs) *JoinReply {
 	newConfig.Shards = newShards
 	cf.Configs = append(cf.Configs, newConfig)
 
+	fmt.Println("[Raft Config]", newConfig.Num-1, "->", newConfig.Num)
+
 	return reply
 }
 
@@ -84,6 +88,8 @@ func (sc *memoryShardCtrler) Leave(args *LeaveArgs) *LeaveReply {
 	newConfig.Shards = newShards
 	sc.Configs = append(sc.Configs, newConfig)
 
+	fmt.Println("[Raft Config]", newConfig.Num-1, "->", newConfig.Num)
+
 	return reply
 }
 
@@ -95,12 +101,14 @@ func (sc *memoryShardCtrler) Move(args *MoveArgs) *MoveReply {
 
 	sc.Configs = append(sc.Configs, newConfig)
 
+	fmt.Println("[Raft Config]", newConfig.Num-1, "->", newConfig.Num)
+
 	return reply
 }
 
 func (sc *memoryShardCtrler) Query(args *QueryArgs) *QueryReply {
 	reply := &QueryReply{}
-	if args.Num == -1 || args.Num > len(sc.Configs) {
+	if args.Num == -1 || args.Num >= len(sc.Configs) {
 		reply.Config = sc.Configs[len(sc.Configs)-1]
 	} else {
 		reply.Config = sc.Configs[args.Num]

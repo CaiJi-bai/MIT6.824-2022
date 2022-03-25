@@ -1,15 +1,18 @@
 package shardkv
 
-import "6.824/porcupine"
-import "6.824/models"
-import "testing"
-import "strconv"
-import "time"
-import "fmt"
-import "sync/atomic"
-import "sync"
-import "math/rand"
-import "io/ioutil"
+import (
+	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"6.824/models"
+	"6.824/porcupine"
+)
 
 const linearizabilityCheckTimeout = 1 * time.Second
 
@@ -320,6 +323,8 @@ func TestConcurrent1(t *testing.T) {
 		ck.Put(ka[i], va[i])
 	}
 
+	fmt.Println("===============================  1  ===================================")
+
 	var done int32
 	ch := make(chan bool)
 
@@ -345,6 +350,8 @@ func TestConcurrent1(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	cfg.leave(0)
 
+	fmt.Println("===============================  2  ===================================")
+
 	cfg.ShutdownGroup(0)
 	time.Sleep(100 * time.Millisecond)
 	cfg.ShutdownGroup(1)
@@ -352,6 +359,8 @@ func TestConcurrent1(t *testing.T) {
 	cfg.ShutdownGroup(2)
 
 	cfg.leave(2)
+
+	fmt.Println("===============================  3  ===================================")
 
 	time.Sleep(100 * time.Millisecond)
 	cfg.StartGroup(0)
@@ -364,12 +373,16 @@ func TestConcurrent1(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	cfg.join(1)
 
+	fmt.Println("===============================  4  ===================================")
+
 	time.Sleep(1 * time.Second)
 
 	atomic.StoreInt32(&done, 1)
 	for i := 0; i < n; i++ {
 		<-ch
 	}
+
+	fmt.Println("===============================  5  ===================================")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -463,6 +476,8 @@ func TestConcurrent3(t *testing.T) {
 
 	cfg.join(0)
 
+	fmt.Println("===============================  1  ===================================")
+
 	n := 10
 	ka := make([]string, n)
 	va := make([]string, n)
@@ -471,6 +486,8 @@ func TestConcurrent3(t *testing.T) {
 		va[i] = randstring(1)
 		ck.Put(ka[i], va[i])
 	}
+
+	fmt.Println("===============================  2  ===================================")
 
 	var done int32
 	ch := make(chan bool)
@@ -488,6 +505,8 @@ func TestConcurrent3(t *testing.T) {
 		ck1 := cfg.makeClient()
 		go ff(i, ck1)
 	}
+
+	fmt.Println("===============================  3  ===================================")
 
 	t0 := time.Now()
 	for time.Since(t0) < 12*time.Second {
@@ -507,12 +526,16 @@ func TestConcurrent3(t *testing.T) {
 		time.Sleep(time.Duration(rand.Int()%900) * time.Millisecond)
 	}
 
+	fmt.Println("===============================  4  ===================================")
+
 	time.Sleep(2 * time.Second)
 
 	atomic.StoreInt32(&done, 1)
 	for i := 0; i < n; i++ {
 		<-ch
 	}
+
+	fmt.Println("===============================  5  ===================================")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])

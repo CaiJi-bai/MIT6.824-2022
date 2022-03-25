@@ -158,16 +158,16 @@ func (sc *ShardCtrler) Command(request *CommandRequest) (response *CommandRespon
 	select {
 	case result := <-ch:
 		response = result
-	case <-time.After(time.Second):
+	case <-time.After(500 * time.Millisecond):
 		response.Err = "ErrTimeout"
 	}
 	// release notifyChan to reduce memory footprint
 	// why asynchronously? to improve throughput, here is no need to block client request
-	go func() {
-		sc.mu.Lock()
-		// kv.removeOutdatedNotifyChan(index)
-		sc.mu.Unlock()
-	}()
+	// go func() {
+	// 	sc.mu.Lock()
+	// 	// kv.removeOutdatedNotifyChan(index)
+	// 	sc.mu.Unlock()
+	// }()
 	return
 }
 
@@ -277,7 +277,7 @@ func (sc *ShardCtrler) getNotifyChan(clientId int) chan *CommandResponse {
 	if ok {
 		return c
 	}
-	c = make(chan *CommandResponse)
+	c = make(chan *CommandResponse, 128)
 	sc.notifyChans[clientId] = c
 	return c
 }
